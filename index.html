@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connexion — Plateforme classe</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="card">
+    <h1>Connexion</h1>
+    <form id="login-form">
+      <label>Identifiant</label>
+      <input type="text" id="username" required autocomplete="username">
+      <label>Mot de passe</label>
+      <input type="password" id="password" required autocomplete="current-password">
+      <button type="submit">Se connecter</button>
+      <p class="error" id="login-error"></p>
+    </form>
+  </div>
+
+  <div class="card small" id="setup-card">
+    <details>
+      <summary>Premier lancement ? Créer le compte professeur</summary>
+      <form id="setup-form">
+        <label>Nom complet</label>
+        <input type="text" id="s-fullname" required>
+        <label>Identifiant</label>
+        <input type="text" id="s-username" required>
+        <label>Mot de passe</label>
+        <input type="password" id="s-password" required minlength="6">
+        <button type="submit">Créer le compte prof</button>
+        <p class="hint">Ne fonctionne qu'une seule fois, tant qu'aucun compte n'existe encore.</p>
+        <p class="error" id="setup-error"></p>
+        <p class="ok" id="setup-ok"></p>
+      </form>
+    </details>
+  </div>
+</div>
+<script src="/app.js"></script>
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  const body = new URLSearchParams();
+  body.set('username', document.getElementById('username').value);
+  body.set('password', document.getElementById('password').value);
+  try {
+    const res = await fetch('/auth/login', { method: 'POST', body });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.detail || 'Erreur de connexion'; return; }
+    localStorage.setItem('token', data.access_token);
+    localStorage.setItem('role', data.role);
+    localStorage.setItem('full_name', data.full_name);
+    window.location.href = data.role === 'prof' ? '/teacher.html' : '/student.html';
+  } catch (err) {
+    errEl.textContent = 'Impossible de contacter le serveur';
+  }
+});
+
+document.getElementById('setup-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById('setup-error');
+  const okEl = document.getElementById('setup-ok');
+  errEl.textContent = ''; okEl.textContent = '';
+  const fd = new FormData();
+  fd.set('full_name', document.getElementById('s-fullname').value);
+  fd.set('username', document.getElementById('s-username').value);
+  fd.set('password', document.getElementById('s-password').value);
+  const res = await fetch('/auth/setup-teacher', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (!res.ok) { errEl.textContent = data.detail || 'Erreur'; return; }
+  okEl.textContent = 'Compte créé, tu peux te connecter ci-dessus.';
+});
+</script>
+</body>
+</html>

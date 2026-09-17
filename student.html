@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Espace élève</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="topbar">
+  <h2><img id="avatar-img" class="avatar" style="display:none" alt=""> Espace élève — <span id="who"></span></h2>
+  <div class="row" style="margin:0">
+    <label class="secondary" style="width:auto;margin:0;padding:8px 14px;border-radius:8px;border:1px solid var(--border);cursor:pointer">
+      Changer photo <input type="file" id="avatar-input" accept="image/*" style="display:none">
+    </label>
+    <button class="secondary" onclick="logout()">Déconnexion</button>
+  </div>
+</div>
+<div class="layout">
+  <nav class="side">
+    <button class="nav-btn active" data-sec="classes">Mes classes</button>
+    <button class="nav-btn" data-sec="resources">Fichiers & textes</button>
+    <button class="nav-btn" data-sec="assignments">Devoirs</button>
+    <button class="nav-btn" data-sec="grades">Mes notes</button>
+    <button class="nav-btn" data-sec="quizzes">QCM</button>
+  </nav>
+  <main class="content">
+
+    <section class="section active" id="sec-classes">
+      <h3>Mes classes</h3>
+      <div id="classes-list"></div>
+    </section>
+
+    <section class="section" id="sec-resources">
+      <h3>Fichiers & textes partagés</h3>
+      <div id="resources-list"></div>
+    </section>
+
+    <section class="section" id="sec-assignments">
+      <h3>Devoirs</h3>
+      <div id="assignments-list"></div>
+    </section>
+
+    <section class="section" id="sec-grades">
+      <h3>Mes notes</h3>
+      <div id="grades-list"></div>
+    </section>
+
+    <section class="section" id="sec-quizzes">
+      <h3>QCM</h3>
+      <div id="quizzes-list"></div>
+      <div id="quiz-runner"></div>
+    </section>
+
+  </main>
+</div>
+<script src="/app.js"></script>
+<script>
+requireAuth('eleve');
+document.getElementById('who').textContent = localStorage.getItem('full_name');
+
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('sec-' + btn.dataset.sec).classList.add('active');
+  });
+});
+
+async function loadMe() {
+  const me = await apiGet('/me');
+  if (me.profile_picture) {
+    const img = document.getElementById('avatar-img');
+    img.src = me.profile_picture; img.style.display = 'inline-block';
+  }
+}
+document.getElementById('avatar-input').addEventListener('change', async (e) => {
+  if (!e.target.files[0]) return;
+  const fd = new FormData(); fd.set('file', e.target.files[0]);
+  try { await apiPostForm('/me/profile-picture', fd); await loadMe(); }
+  catch (err) { alert(err.message); }
+});
+
+async function loadClasses() {
+  const list = await apiGet('/student/classes');
+  document.getElementById('classes-list').innerHTML = list.map(c => `
+    <div class="item"><h4>${esc(c.name)}</h4><div class="meta">Professeur : ${esc(c.teacher_name)}</div></div>
+  `).join('') || '<p class="hint">Tu n\'es inscrit dans aucune classe pour l\'instant.</p>';
+}
+
+async function loadResources() {
+  const list = await apiGet('/student/resources');
+  document.getElementById('resources-list').innerHTML = list.map(r => `
+    <div class="item">
+      <h4>${r.type === 'file' ? '📎' : '📝'} ${esc(r.title)}</h4>
+      ${r.type === 'text' ? `<p>${esc(r.content)}</p>` : `
+        <div class="meta">${esc(r.original_filename)}</div>
+        <div class="row"><a href="#" onclick="downloadResource(${r.id}); return false;">Télécharger</a></div>
+      `}
+      <div class="meta">Publié par ${esc(r.teacher_name)} — ${new Date(r.created_at).toLocaleString('fr-FR')}</div>
+    </div>
+  `).join('') || '<p class="hint">Rien de partagé avec toi pour l\'instant.</p>';
+}
+
+async function downloadResource(id) {
+  const res = await apiFetch(`/student/resources/${id}/download`);
+  const blob = await res.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const cd = res.headers.get('content-disposition') || '';
+  a.download = (cd.split('filename=')[1] || 'fichier').replace(/"/g, '');
+  a.click();
+}
+
+async function loadAssignments() {
+  const list = await apiGet('/student/assignments');
+  document.getElementById('assignments-list').innerHTML = list.map(a => `
+    <div class="item">
+      <h4>${esc(a.title)} <span class="pill">${esc(a.class_name)}</span></h4>
+      <p>${esc(a.description || '')}</p>
+      <div class="meta">${a.due_date ? 'À rendre pour le ' + a.due_date : 'Pas de date limite'}</div>
+      <label style="display:flex;align-items:center;gap:6px;margin-top:8px">
+        <input type="checkbox" style="width:auto" ${a.marked_done ? 'checked' : ''} onchange="toggleDone(${a.id}, this.checked)">
+        J'ai fait ce devoir
+      </label>
+      ${a.my_submission
+        ? `<div class="meta" style="margin-top:8px">✅ Fichier rendu : ${esc(a.my_submission.original_filename)} (${new Date(a.my_submission.submitted_at).toLocaleString('fr-FR')})</div>
+           <div class="row"><input type="file" id="file-${a.id}"><button style="width:auto;margin:0" onclick="submitAssignment(${a.id})">Remplacer mon rendu</button></div>`
+        : `<div class="row"><input type="file" id="file-${a.id}"><button style="width:auto;margin:0" onclick="submitAssignment(${a.id})">Déposer mon devoir</button></div>`
+      }
+    </div>
+  `).join('') || '<p class="hint">Aucun devoir pour l\'instant.</p>';
+}
+
+async function submitAssignment(id) {
+  const input = document.getElementById('file-' + id);
+  if (!input.files[0]) { alert('Choisis un fichier'); return; }
+  const fd = new FormData(); fd.set('file', input.files[0]);
+  await apiPostForm(`/student/assignments/${id}/submit`, fd);
+  await loadAssignments();
+}
+
+async function toggleDone(id, done) {
+  const fd = new FormData(); fd.set('done', done);
+  await apiPostForm(`/student/assignments/${id}/mark-done`, fd);
+}
+
+async function loadGrades() {
+  const list = await apiGet('/student/grades');
+  document.getElementById('grades-list').innerHTML = list.map(g => `
+    <div class="item">
+      <h4>${esc(g.label)} <span class="pill">${esc(g.class_name)}</span></h4>
+      <div class="meta">${g.value}/${g.max_value} — ${new Date(g.created_at).toLocaleString('fr-FR')}</div>
+    </div>
+  `).join('') || '<p class="hint">Aucune note pour l\'instant.</p>';
+}
+
+async function loadQuizzes() {
+  const list = await apiGet('/student/quizzes');
+  document.getElementById('quizzes-list').innerHTML = list.map(q => `
+    <div class="item">
+      <h4>${esc(q.title)} <span class="pill">${esc(q.class_name)}</span></h4>
+      <div class="meta">${q.question_count} question(s)</div>
+      ${q.my_attempt
+        ? `<div class="meta" style="margin-top:8px">✅ Déjà fait — score : ${q.my_attempt.score}/${q.my_attempt.total}</div>`
+        : `<button style="width:auto;margin-top:8px" onclick="startQuiz(${q.id})">Commencer le QCM</button>`
+      }
+    </div>
+  `).join('') || '<p class="hint">Aucun QCM pour l\'instant.</p>';
+  document.getElementById('quiz-runner').innerHTML = '';
+}
+
+async function startQuiz(id) {
+  const quiz = await apiGet(`/student/quizzes/${id}`);
+  const runner = document.getElementById('quiz-runner');
+  runner.innerHTML = `
+    <div class="item">
+      <h3>${esc(quiz.title)}</h3>
+      <form id="quiz-answer-form">
+        ${quiz.questions.map(q => `
+          <div style="margin-bottom:14px">
+            <label>${esc(q.question_text)}</label>
+            ${q.options.map(o => `
+              <label style="display:flex;align-items:center;gap:6px;font-weight:normal;margin:4px 0">
+                <input type="radio" name="q-${q.id}" value="${o.id}" required style="width:auto">
+                ${esc(o.option_text)}
+              </label>
+            `).join('')}
+          </div>
+        `).join('')}
+        <button type="submit">Valider mes réponses</button>
+      </form>
+    </div>
+  `;
+  document.getElementById('quiz-answer-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const answers = {};
+    quiz.questions.forEach(q => {
+      const checked = document.querySelector(`input[name="q-${q.id}"]:checked`);
+      if (checked) answers[q.id] = parseInt(checked.value);
+    });
+    const fd = new FormData(); fd.set('answers', JSON.stringify(answers));
+    const result = await apiPostForm(`/student/quizzes/${id}/submit`, fd);
+    runner.innerHTML = `<div class="item"><h3>Résultat : ${result.score}/${result.total}</h3></div>`;
+    await loadQuizzes();
+  });
+}
+
+(async function init() {
+  await loadMe();
+  await loadClasses();
+  await loadResources();
+  await loadAssignments();
+  await loadGrades();
+  await loadQuizzes();
+})();
+</script>
+</body>
+</html>

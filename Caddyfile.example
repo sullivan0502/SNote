@@ -1,0 +1,19 @@
+# Exemple de Caddyfile pour exposer le site en HTTPS avec un certificat
+# automatique (Let's Encrypt), devant l'appli qui tourne en local sur le
+# port 8000. Caddy s'occupe de tout : demande, renouvellement, redirection
+# HTTP -> HTTPS.
+#
+# 1. Remplace "tonpseudo.duckdns.org" par ton propre sous-domaine DuckDNS/No-IP.
+# 2. Copie ce fichier en "Caddyfile" (sans extension) à côté de l'exécutable Caddy.
+# 3. Sur ton routeur, redirige les ports 80 ET 443 vers l'IP locale de cette
+#    machine (Caddy en a besoin pour générer le certificat, même si le site
+#    lui-même ne répond qu'en 443 ensuite).
+# 4. Lance Caddy : caddy run
+#
+# Ne pousse pas ton vrai Caddyfile sur GitHub si tu y mets ton domaine — ce
+# n'est pas un secret critique, mais autant éviter d'exposer publiquement
+# l'adresse exacte de ton serveur maison.
+
+tonpseudo.duckdns.org {
+    reverse_proxy 127.0.0.1:8000
+}

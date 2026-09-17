@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Espace professeur</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="topbar">
+  <h2><img id="avatar-img" class="avatar" style="display:none" alt=""> Espace professeur — <span id="who"></span></h2>
+  <div class="row" style="margin:0">
+    <label class="secondary" style="width:auto;margin:0;padding:8px 14px;border-radius:8px;border:1px solid var(--border);cursor:pointer">
+      Changer photo <input type="file" id="avatar-input" accept="image/*" style="display:none">
+    </label>
+    <button class="secondary" onclick="logout()">Déconnexion</button>
+  </div>
+</div>
+<div class="layout">
+  <nav class="side">
+    <button class="nav-btn active" data-sec="classes">Classes & élèves</button>
+    <button class="nav-btn" data-sec="resources">Fichiers & textes</button>
+    <button class="nav-btn" data-sec="assignments">Devoirs</button>
+    <button class="nav-btn" data-sec="grades">Notes</button>
+    <button class="nav-btn" data-sec="quizzes">QCM</button>
+  </nav>
+  <main class="content">
+
+    <section class="section active" id="sec-classes">
+      <h3>Élèves</h3>
+      <form id="student-form" class="item">
+        <label>Nom complet</label><input id="st-fullname" required>
+        <label>Identifiant</label><input id="st-username" required>
+        <label>Mot de passe</label><input id="st-password" type="password" required minlength="6">
+        <button type="submit">Créer l'élève</button>
+      </form>
+      <div id="students-list"></div>
+
+      <h3>Classes</h3>
+      <form id="class-form" class="item">
+        <label>Nom de la classe</label><input id="cl-name" required>
+        <button type="submit">Créer la classe</button>
+      </form>
+      <div id="classes-list"></div>
+    </section>
+
+    <section class="section" id="sec-resources">
+      <h3>Publier un fichier ou un texte</h3>
+      <form id="resource-form" class="item">
+        <label>Type</label>
+        <select id="res-type">
+          <option value="file">Fichier</option>
+          <option value="text">Texte</option>
+        </select>
+        <label>Titre</label><input id="res-title" required>
+        <div id="res-file-wrap"><label>Fichier</label><input id="res-file" type="file"></div>
+        <div id="res-text-wrap" style="display:none"><label>Contenu</label><textarea id="res-content" rows="4"></textarea></div>
+        <label>Visible par (classes entières)</label>
+        <div class="checkbox-list" id="res-classes"></div>
+        <label>Visible par (groupes)</label>
+        <div class="checkbox-list" id="res-groups"></div>
+        <label>Visible par (élèves en plus / à la place)</label>
+        <div class="checkbox-list" id="res-students"></div>
+        <button type="submit">Publier</button>
+        <p class="error" id="res-error"></p>
+      </form>
+      <div id="resources-list"></div>
+    </section>
+
+    <section class="section" id="sec-assignments">
+      <h3>Créer un devoir</h3>
+      <form id="assignment-form" class="item">
+        <label>Classe</label>
+        <select id="as-class"></select>
+        <label>Groupe (optionnel — sinon toute la classe)</label>
+        <select id="as-group"><option value="">Toute la classe</option></select>
+        <label>Titre</label><input id="as-title" required>
+        <label>Consigne</label><textarea id="as-desc" rows="3"></textarea>
+        <label>Date limite</label><input id="as-due" type="date">
+        <button type="submit">Créer le devoir</button>
+      </form>
+      <div id="assignments-list"></div>
+    </section>
+
+    <section class="section" id="sec-grades">
+      <h3>Ajouter une note</h3>
+      <form id="grade-form" class="item">
+        <label>Classe</label>
+        <select id="gr-class"></select>
+        <label>Élève</label>
+        <select id="gr-student"></select>
+        <label>Intitulé</label><input id="gr-label" placeholder="Contrôle chapitre 3" required>
+        <div class="row">
+          <div style="flex:1"><label>Note</label><input id="gr-value" type="number" step="0.5" required></div>
+          <div style="flex:1"><label>Sur</label><input id="gr-max" type="number" step="0.5" value="20"></div>
+        </div>
+        <button type="submit">Ajouter la note</button>
+      </form>
+      <div id="grades-list"></div>
+    </section>
+
+    <section class="section" id="sec-quizzes">
+      <h3>Créer un QCM</h3>
+      <form id="quiz-form" class="item">
+        <label>Classe</label>
+        <select id="qz-class"></select>
+        <label>Titre du QCM</label><input id="qz-title" required>
+        <div id="qz-questions"></div>
+        <button type="button" class="secondary" onclick="addQuestion()">+ Ajouter une question</button>
+        <button type="submit">Publier le QCM</button>
+        <p class="error" id="qz-error"></p>
+      </form>
+      <div id="quizzes-list"></div>
+    </section>
+
+  </main>
+</div>
+<script src="/app.js"></script>
+<script>
+requireAuth('prof');
+document.getElementById('who').textContent = localStorage.getItem('full_name');
+
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('sec-' + btn.dataset.sec).classList.add('active');
+  });
+});
+
+let studentsCache = [];
+let classesCache = [];
+
+async function loadMe() {
+  const me = await apiGet('/me');
+  if (me.profile_picture) {
+    const img = document.getElementById('avatar-img');
+    img.src = me.profile_picture; img.style.display = 'inline-block';
+  }
+}
+document.getElementById('avatar-input').addEventListener('change', async (e) => {
+  if (!e.target.files[0]) return;
+  const fd = new FormData(); fd.set('file', e.target.files[0]);
+  try { await apiPostForm('/me/profile-picture', fd); await loadMe(); }
+  catch (err) { alert(err.message); }
+});
+
+async function loadStudents() {
+  studentsCache = await apiGet('/teacher/students');
+  document.getElementById('students-list').innerHTML = studentsCache.map(s =>
+    `<div class="item"><h4>${esc(s.full_name)}</h4><div class="meta">Identifiant : ${esc(s.username)}</div></div>`
+  ).join('') || '<p class="hint">Aucun élève créé pour l\'instant.</p>';
+  renderCheckboxList('res-students', studentsCache, 'full_name');
+  document.getElementById('gr-student').innerHTML = studentsCache.map(s => `<option value="${s.id}">${esc(s.full_name)}</option>`).join('');
+}
+
+async function loadClasses() {
+  classesCache = await apiGet('/teacher/classes');
+  document.getElementById('classes-list').innerHTML = classesCache.map(c => `
+    <div class="item">
+      <h4>${esc(c.name)}</h4>
+      <div class="meta">${c.members.length} élève(s) : ${c.members.map(m => esc(m.full_name)).join(', ') || '—'}</div>
+      <div class="row">
+        <select id="add-sel-${c.id}">
+          <option value="">Ajouter un élève…</option>
+          ${studentsCache.filter(s => !c.members.some(m => m.id === s.id))
+            .map(s => `<option value="${s.id}">${esc(s.full_name)}</option>`).join('')}
+        </select>
+        <button class="secondary" style="width:auto;margin:0" onclick="addMember(${c.id})">Ajouter</button>
+      </div>
+      <div class="meta" style="margin-top:10px">Groupes :</div>
+      ${c.groups.map(g => `
+        <div class="row" style="margin-top:4px">
+          <span class="pill">${esc(g.name)}</span>
+          <span class="hint">${g.members.map(m => esc(m.full_name)).join(', ') || 'vide'}</span>
+          <select id="grp-sel-${g.id}">
+            <option value="">+ élève…</option>
+            ${c.members.filter(m => !g.members.some(gm => gm.id === m.id))
+              .map(m => `<option value="${m.id}">${esc(m.full_name)}</option>`).join('')}
+          </select>
+          <button class="secondary" style="width:auto;margin:0" onclick="addGroupMember(${g.id})">Ajouter</button>
+        </div>
+      `).join('')}
+      <div class="row" style="margin-top:6px">
+        <input id="new-group-${c.id}" placeholder="Nom du nouveau groupe" style="flex:1">
+        <button class="secondary" style="width:auto;margin:0" onclick="createGroup(${c.id})">Créer le groupe</button>
+      </div>
+    </div>
+  `).join('') || '<p class="hint">Aucune classe créée pour l\'instant.</p>';
+  renderCheckboxList('res-classes', classesCache, 'name');
+  const allGroups = classesCache.flatMap(c => c.groups.map(g => ({ id: g.id, label: `${g.name} (${c.name})` })));
+  document.getElementById('res-groups').innerHTML = allGroups.map(g =>
+    `<label><input type="checkbox" value="${g.id}">${esc(g.label)}</label>`
+  ).join('') || '<span class="hint">Aucun groupe créé</span>';
+  document.getElementById('as-class').innerHTML = classesCache.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  document.getElementById('gr-class').innerHTML = classesCache.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  document.getElementById('qz-class').innerHTML = classesCache.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  updateAsGroupOptions();
+}
+
+document.getElementById('as-class').addEventListener('change', updateAsGroupOptions);
+function updateAsGroupOptions() {
+  const cid = document.getElementById('as-class').value;
+  const cls = classesCache.find(c => String(c.id) === String(cid));
+  const groups = cls ? cls.groups : [];
+  document.getElementById('as-group').innerHTML = '<option value="">Toute la classe</option>' +
+    groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
+}
+
+async function addMember(classId) {
+  const sel = document.getElementById('add-sel-' + classId);
+  if (!sel.value) return;
+  const fd = new FormData(); fd.set('student_id', sel.value);
+  await apiPostForm(`/teacher/classes/${classId}/members`, fd);
+  await loadStudents(); await loadClasses();
+}
+
+async function createGroup(classId) {
+  const input = document.getElementById('new-group-' + classId);
+  if (!input.value.trim()) return;
+  const fd = new FormData(); fd.set('class_id', classId); fd.set('name', input.value.trim());
+  await apiPostForm('/teacher/groups', fd);
+  await loadClasses();
+}
+
+async function addGroupMember(groupId) {
+  const sel = document.getElementById('grp-sel-' + groupId);
+  if (!sel.value) return;
+  const fd = new FormData(); fd.set('student_id', sel.value);
+  await apiPostForm(`/teacher/groups/${groupId}/members`, fd);
+  await loadClasses();
+}
+
+function renderCheckboxList(containerId, items, labelKey) {
+  document.getElementById(containerId).innerHTML = items.map(it =>
+    `<label><input type="checkbox" value="${it.id}">${esc(it[labelKey])}</label>`
+  ).join('') || '<span class="hint">Aucun élément</span>';
+}
+
+function checkedIds(containerId) {
+  return [...document.querySelectorAll(`#${containerId} input:checked`)].map(i => i.value).join(',');
+}
+
+document.getElementById('student-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData();
+  fd.set('full_name', document.getElementById('st-fullname').value);
+  fd.set('username', document.getElementById('st-username').value);
+  fd.set('password', document.getElementById('st-password').value);
+  try {
+    await apiPostForm('/teacher/students', fd);
+    e.target.reset();
+    await loadStudents(); await loadClasses();
+  } catch (err) { alert(err.message); }
+});
+
+document.getElementById('class-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(); fd.set('name', document.getElementById('cl-name').value);
+  await apiPostForm('/teacher/classes', fd);
+  e.target.reset();
+  await loadClasses();
+});
+
+document.getElementById('res-type').addEventListener('change', (e) => {
+  document.getElementById('res-file-wrap').style.display = e.target.value === 'file' ? 'block' : 'none';
+  document.getElementById('res-text-wrap').style.display = e.target.value === 'text' ? 'block' : 'none';
+});
+
+document.getElementById('resource-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById('res-error'); errEl.textContent = '';
+  const type = document.getElementById('res-type').value;
+  const fd = new FormData();
+  fd.set('type', type);
+  fd.set('title', document.getElementById('res-title').value);
+  if (type === 'file') fd.set('file', document.getElementById('res-file').files[0]);
+  else fd.set('content', document.getElementById('res-content').value);
+  fd.set('access_classes', checkedIds('res-classes'));
+  fd.set('access_groups', checkedIds('res-groups'));
+  fd.set('access_students', checkedIds('res-students'));
+  try {
+    await apiPostForm('/teacher/resources', fd);
+    e.target.reset();
+    document.getElementById('res-file-wrap').style.display = 'block';
+    document.getElementById('res-text-wrap').style.display = 'none';
+    await loadResources();
+  } catch (err) { errEl.textContent = err.message; }
+});
+
+async function loadResources() {
+  const list = await apiGet('/teacher/resources');
+  document.getElementById('resources-list').innerHTML = list.map(r => `
+    <div class="item">
+      <h4>${r.type === 'file' ? '📎' : '📝'} ${esc(r.title)}</h4>
+      ${r.type === 'text' ? `<p>${esc(r.content)}</p>` : `<div class="meta">${esc(r.original_filename)}</div>`}
+      <div class="meta">${new Date(r.created_at).toLocaleString('fr-FR')}</div>
+      <div class="row">
+        ${r.access.map(a => `<span class="pill">${a.target_type === 'class' ? 'classe #' + a.target_id : a.target_type === 'group' ? 'groupe #' + a.target_id : 'élève #' + a.target_id}</span>`).join('')}
+      </div>
+      <div class="row"><button class="danger" style="width:auto;margin:0" onclick="deleteResource(${r.id})">Supprimer</button></div>
+    </div>
+  `).join('') || '<p class="hint">Rien de publié pour l\'instant.</p>';
+}
+
+async function deleteResource(id) {
+  if (!confirm('Supprimer cette ressource ?')) return;
+  await apiDelete(`/teacher/resources/${id}`);
+  await loadResources();
+}
+
+document.getElementById('assignment-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData();
+  fd.set('class_id', document.getElementById('as-class').value);
+  fd.set('group_id', document.getElementById('as-group').value);
+  fd.set('title', document.getElementById('as-title').value);
+  fd.set('description', document.getElementById('as-desc').value);
+  fd.set('due_date', document.getElementById('as-due').value);
+  await apiPostForm('/teacher/assignments', fd);
+  e.target.reset();
+  await loadAssignments();
+});
+
+async function loadAssignments() {
+  const list = await apiGet('/teacher/assignments');
+  document.getElementById('assignments-list').innerHTML = list.map(a => `
+    <div class="item">
+      <h4>${esc(a.title)} <span class="pill">${esc(a.class_name)}${a.group_name ? ' · ' + esc(a.group_name) : ''}</span></h4>
+      <p>${esc(a.description || '')}</p>
+      <div class="meta">${a.due_date ? 'À rendre pour le ' + a.due_date : 'Pas de date limite'}</div>
+      <div class="meta" style="margin-top:8px">${a.submissions.length} fichier(s) rendu(s) :</div>
+      ${a.submissions.map(s => `
+        <div class="row">
+          <span>${esc(s.full_name)} — ${esc(s.original_filename)}</span>
+          <a href="#" onclick="downloadSubmission(${s.id}); return false;">Télécharger</a>
+        </div>
+      `).join('') || '<p class="hint">Aucun rendu pour l\'instant.</p>'}
+      <div class="meta" style="margin-top:8px">✅ Marqué "fait" par : ${a.marked_done.map(m => esc(m.full_name)).join(', ') || '—'}</div>
+    </div>
+  `).join('') || '<p class="hint">Aucun devoir créé pour l\'instant.</p>';
+}
+
+async function downloadSubmission(id) {
+  const res = await apiFetch(`/teacher/submissions/${id}/download`);
+  const blob = await res.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const cd = res.headers.get('content-disposition') || '';
+  a.download = (cd.split('filename=')[1] || 'fichier').replace(/"/g, '');
+  a.click();
+}
+
+document.getElementById('grade-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData();
+  fd.set('class_id', document.getElementById('gr-class').value);
+  fd.set('student_id', document.getElementById('gr-student').value);
+  fd.set('label', document.getElementById('gr-label').value);
+  fd.set('value', document.getElementById('gr-value').value);
+  fd.set('max_value', document.getElementById('gr-max').value || 20);
+  await apiPostForm('/teacher/grades', fd);
+  e.target.reset();
+  document.getElementById('gr-max').value = 20;
+  await loadGrades();
+});
+
+document.getElementById('gr-class').addEventListener('change', loadGrades);
+
+async function loadGrades() {
+  const classId = document.getElementById('gr-class').value;
+  const list = classId ? await apiGet(`/teacher/grades?class_id=${classId}`) : await apiGet('/teacher/grades');
+  document.getElementById('grades-list').innerHTML = list.map(g => `
+    <div class="item">
+      <div class="row" style="justify-content:space-between">
+        <span><strong>${esc(g.student_name)}</strong> — ${esc(g.label)} : ${g.value}/${g.max_value}</span>
+        <button class="danger" style="width:auto;margin:0" onclick="deleteGrade(${g.id})">Supprimer</button>
+      </div>
+      <div class="meta">${new Date(g.created_at).toLocaleString('fr-FR')}</div>
+    </div>
+  `).join('') || '<p class="hint">Aucune note pour l\'instant.</p>';
+}
+
+async function deleteGrade(id) {
+  await apiDelete(`/teacher/grades/${id}`);
+  await loadGrades();
+}
+
+let questionCount = 0;
+function addQuestion() {
+  questionCount++;
+  const id = questionCount;
+  const wrap = document.createElement('div');
+  wrap.className = 'item';
+  wrap.id = `q-${id}`;
+  wrap.innerHTML = `
+    <label>Question</label><input class="q-text" required>
+    <label>Réponses (coche la bonne)</label>
+    <div class="opt-list">
+      <div class="row"><input type="radio" name="correct-${id}" value="0"><input class="opt-text" placeholder="Réponse 1" required></div>
+      <div class="row"><input type="radio" name="correct-${id}" value="1"><input class="opt-text" placeholder="Réponse 2" required></div>
+    </div>
+    <button type="button" class="secondary" style="width:auto;margin:8px 0 0" onclick="addOption(${id})">+ Réponse</button>
+    <button type="button" class="danger" style="width:auto;margin:8px 0 0" onclick="document.getElementById('q-${id}').remove()">Supprimer la question</button>
+  `;
+  document.getElementById('qz-questions').appendChild(wrap);
+}
+function addOption(qid) {
+  const list = document.querySelector(`#q-${qid} .opt-list`);
+  const idx = list.children.length;
+  const div = document.createElement('div');
+  div.className = 'row';
+  div.innerHTML = `<input type="radio" name="correct-${qid}" value="${idx}"><input class="opt-text" placeholder="Réponse ${idx + 1}" required>`;
+  list.appendChild(div);
+}
+
+document.getElementById('quiz-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById('qz-error'); errEl.textContent = '';
+  const questionEls = [...document.querySelectorAll('#qz-questions .item')];
+  if (!questionEls.length) { errEl.textContent = 'Ajoute au moins une question'; return; }
+  const questions = questionEls.map(qEl => {
+    const qid = qEl.id.split('-')[1];
+    const optionEls = [...qEl.querySelectorAll('.opt-list .row')];
+    const checked = qEl.querySelector(`input[name="correct-${qid}"]:checked`);
+    const options = optionEls.map((row, i) => ({
+      text: row.querySelector('.opt-text').value,
+      is_correct: checked && checked.value === String(i),
+    }));
+    return { question_text: qEl.querySelector('.q-text').value, options };
+  });
+  if (questions.some(q => !q.options.some(o => o.is_correct))) {
+    errEl.textContent = 'Chaque question doit avoir une bonne réponse cochée';
+    return;
+  }
+  const fd = new FormData();
+  fd.set('class_id', document.getElementById('qz-class').value);
+  fd.set('title', document.getElementById('qz-title').value);
+  fd.set('questions', JSON.stringify(questions));
+  try {
+    await apiPostForm('/teacher/quizzes', fd);
+    e.target.reset();
+    document.getElementById('qz-questions').innerHTML = '';
+    questionCount = 0;
+    await loadQuizzes();
+  } catch (err) { errEl.textContent = err.message; }
+});
+
+async function loadQuizzes() {
+  const list = await apiGet('/teacher/quizzes');
+  document.getElementById('quizzes-list').innerHTML = list.map(q => `
+    <div class="item">
+      <div class="row" style="justify-content:space-between">
+        <h4>${esc(q.title)} <span class="pill">${esc(q.class_name)}</span></h4>
+        <button class="danger" style="width:auto;margin:0" onclick="deleteQuiz(${q.id})">Supprimer</button>
+      </div>
+      <div class="meta">${q.question_count} question(s) — ${q.attempts.length} élève(s) ont répondu</div>
+      ${q.attempts.map(a => `<div class="row">${esc(a.student_name)} : ${a.score}/${a.total}</div>`).join('')}
+    </div>
+  `).join('') || '<p class="hint">Aucun QCM créé pour l\'instant.</p>';
+}
+
+async function deleteQuiz(id) {
+  if (!confirm('Supprimer ce QCM ?')) return;
+  await apiDelete(`/teacher/quizzes/${id}`);
+  await loadQuizzes();
+}
+
+(async function init() {
+  await loadMe();
+  await loadStudents();
+  await loadClasses();
+  await loadResources();
+  await loadAssignments();
+  await loadGrades();
+  await loadQuizzes();
+})();
+</script>
+</body>
+</html>
