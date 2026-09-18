@@ -19,30 +19,6 @@ Au tout premier lancement, ouvre la page de connexion et déplie "Premier
 lancement ? Créer le compte professeur" pour créer ton compte (ça ne
 fonctionne qu'une seule fois).
 
-## Mettre le projet sur GitHub sans risque
-
-**Ce dépôt est déjà configuré pour ça** (`.gitignore` en place), mais vérifie
-avant de pousser :
-
-1. **Ne commite jamais `.env`** — c'est le fichier qui contient ta clé
-secrète de session (générée automatiquement par `start.bat`/`start.sh`).
-Si elle fuite, n'importe qui peut forger un faux jeton de connexion et se
-faire passer pour ton compte prof. `.gitignore` l'exclut déjà — vérifie
-avec `git status` qu'il n'apparaît jamais dans les fichiers à commiter.
-2. **Ne commite jamais `app.db`** — c'est ta base de données : comptes,
-mots de passe hachés, notes des élèves, contenu des devoirs. Exclu par
-`.gitignore`.
-3. **Ne commite jamais le contenu de `storage/`** — les vrais fichiers
-uploadés (cours, devoirs rendus, photos). Seule la structure des dossiers
-est gardée (`.gitkeep`), pas leur contenu.
-4. Avant de rendre le dépôt public, relance un `git log` et vérifie qu'aucun
-de ces fichiers n'a été commité par erreur avant que le `.gitignore` soit
-en place. Si c'est le cas, il faut les purger de l'historique (pas
-seulement les supprimer dans un commit suivant) — demande-moi si besoin,
-ce n'est pas anodin une fois poussé sur GitHub.
-5. Le code source lui-même (`main.py`, `auth.py`, etc.) ne contient aucun
-secret — il peut être public sans problème.
-
 ## Sécurité déjà en place dans le code
 
 * Mots de passe **hachés avec bcrypt**, jamais stockés en clair.
